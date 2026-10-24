@@ -20,6 +20,7 @@ android {
 }
 dependencies {
     implementation(project(":core:capability"))
+    implementation(project(":core:adb"))
     implementation(platform("androidx.compose:compose-bom:2024.10.01"))
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui")

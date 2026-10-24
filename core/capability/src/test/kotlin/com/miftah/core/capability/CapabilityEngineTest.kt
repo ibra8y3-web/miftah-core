@@ -31,4 +31,10 @@ class CapabilityEngineTest {
     @Test fun everyCapabilityGetsExactlyOneStatus() {
         assertEquals(CapabilityId.entries.size, CapabilityEngine().evaluate(34, AccessLevel.STANDARD).size)
     }
+
+    @Test fun disableNeedsAdbLevelByDefault() {
+        val e = CapabilityEngine()
+        assertTrue(status(e.evaluate(34, AccessLevel.STANDARD), CapabilityId.DISABLE_PACKAGE) is CapabilityStatus.HigherPrivilegeRequired)
+        assertEquals(CapabilityStatus.Supported, status(e.evaluate(34, AccessLevel.ADB), CapabilityId.DISABLE_PACKAGE))
+    }
 }
