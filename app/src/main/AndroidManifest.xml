@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Needed to inventory all installed packages. Play Store requires a policy declaration for this permission. -->
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Deliberate: a full package inventory is the core feature and cannot be expressed with <queries>.
+         Lint check suppressed for this one permission only. Play Store needs a declared-use justification. -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
     <!-- Used only for the loopback connection to this device's own adbd (Wireless debugging). No remote hosts. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
