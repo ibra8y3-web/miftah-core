@@ -13,3 +13,12 @@
 - Companion deps: conscrypt-android 2.5.2 (TLS 1.3 for pairing), BouncyCastle 1.78.1 (certificate generation only). Versions come from memory/READMEs; unverified against Maven Central.
 - Shell v1 service merges stderr into stdout and has no exit code, so an exit-code marker with a random nonce is appended (see ExitMarker).
 - Import paths (`io.github.muntashirakon.adb.*`) and method names (`pair`, `connect`, `openStream`, `isConnected`, `disconnect`, `setApi`) were taken from the README and memory; the first CI build is the real check.
+
+## Later decisions
+- BouncyCastle: libadb-android pulls `bcprov-jdk15to18:1.81` transitively, so core:adb uses the same artifact family/version (`bcprov/bcpkix-jdk15to18:1.81`) to avoid duplicate classes (found by the first CI run).
+- Audit log uses plain SQLite (`SQLiteOpenHelper`) instead of Room: the brief allows "Room or suitable storage", and it avoids KSP version risk while nothing can be compiled locally. Migrate to Room later if wanted.
+- Settings use DataStore Preferences. Language follows the system; per-app language is exposed through `localeConfig` (Android 13+).
+- Extensions / IPC service for other apps is intentionally NOT built: it needs an SDK, per-client authorization and an independent client test, and the brief forbids fake controls. The tab explains this.
+- Rollback is offered only when the state read BEFORE the operation proves it was a real change (see `Rollback`), and only right after the operation or inside a plan run, not from old audit rows.
+- Bulk plans exclude uninstall on purpose. Uninstall for user requires typing the package name.
+- Probes treat any unparseable output as "unknown", which shows the result as NOT verified rather than success.

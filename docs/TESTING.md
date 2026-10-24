@@ -1,10 +1,12 @@
 # Testing status (honest report)
-Authoring environment had JDK 21 only: no Gradle, Kotlin compiler, Android SDK, device or emulator.
+The authoring environment had JDK 21 only: no Gradle, Kotlin compiler, Android SDK, device or emulator.
+
 | Item | Status |
 |---|---|
-| assemble / unit tests / lint | NOT RUN locally; run by GitHub Actions (check the latest run) |
-| Unit tests written: core:model, core:capability, core:execution (commands, engine, parsers, redactor, exit marker, state probe) | written; results come from CI |
-| core:adb (libadb-android transport, KeyVault) | implemented, compiled only by CI, NO unit tests, NEVER run on a device |
-| Real pairing/connect on a device, real disable/enable | NOT TESTED |
-| Device/emulator instrumented tests, RTL screenshots | not written |
-Update this file with real command output after each build.
+| assemble / unit tests / lint | run only by GitHub Actions; check the latest run |
+| JVM unit tests written: core:model (query, protection, audit export JSON/CSV, diagnostics report), core:capability (engine), core:execution (commands, rollback rules, parsers, risk heuristic, exit marker, probes, engine, plan runner, terminal runner) | written; results come from CI |
+| core:adb (libadb transport, KeyVault), core:audit (SQLite), PermissionReader, DiagnosticsReader, all Compose screens | NO tests; compiled only by CI |
+| Real pairing/connect, disable/enable, force-stop, uninstall/restore, grant/revoke, AppOps, plans, terminal on a real device | NOT TESTED |
+| Instrumented tests, RTL screenshots | not written |
+
+Before trusting any destructive action, test on a spare device with a throw-away app. Update this file with real output after each build.

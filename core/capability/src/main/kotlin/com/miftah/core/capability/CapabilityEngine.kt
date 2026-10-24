@@ -22,14 +22,13 @@ class CapabilityEngine(private val implemented: Set<CapabilityId> = DEFAULT_IMPL
     }
 
     companion object {
-        /** Only capabilities with a real, working code path in this build. */
-        val DEFAULT_IMPLEMENTED = setOf(
-            CapabilityId.LIST_PACKAGES, CapabilityId.OPEN_APP_INFO,
-            CapabilityId.ADB_WIRELESS_PAIRING, CapabilityId.DISABLE_PACKAGE,
-        )
+        /** Everything with a real code path in this build. Extensions (IPC SDK) are not built. */
+        val DEFAULT_IMPLEMENTED: Set<CapabilityId> = CapabilityId.entries.toSet() - CapabilityId.EXTENSIONS
 
         fun requiredLevel(id: CapabilityId): AccessLevel = when (id) {
-            CapabilityId.LIST_PACKAGES, CapabilityId.OPEN_APP_INFO, CapabilityId.ADB_WIRELESS_PAIRING -> AccessLevel.STANDARD
+            CapabilityId.LIST_PACKAGES, CapabilityId.OPEN_APP_INFO, CapabilityId.ADB_WIRELESS_PAIRING,
+            CapabilityId.READ_PERMISSIONS, CapabilityId.DIAGNOSTICS, CapabilityId.SYSTEM_UNINSTALL_DIALOG,
+            CapabilityId.EXTENSIONS -> AccessLevel.STANDARD
             else -> AccessLevel.ADB
         }
     }

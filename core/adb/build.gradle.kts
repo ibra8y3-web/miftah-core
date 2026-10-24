@@ -17,6 +17,6 @@ dependencies {
     // TLS provider required by libadb for Wireless Debugging pairing.
     implementation("org.conscrypt:conscrypt-android:2.5.2")
     // Self-signed certificate generation for the ADB identity.
-    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
-    implementation("org.bouncycastle:bcpkix-jdk18on:1.78.1")
+    implementation("org.bouncycastle:bcprov-jdk15to18:1.81")
+    implementation("org.bouncycastle:bcpkix-jdk15to18:1.81")
 }

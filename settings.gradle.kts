@@ -9,4 +9,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "miftah-core"
-include(":app", ":core:model", ":core:capability", ":core:execution", ":core:adb")
+include(":app", ":core:model", ":core:capability", ":core:execution", ":core:adb", ":core:audit")

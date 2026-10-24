@@ -16,6 +16,12 @@ object ShellParsers {
         return PackageListParse(pkgs, bad)
     }
 
+    /** Parses `OP_NAME: allow` style lines (optionally prefixed by `Uid mode:`). Returns null if absent. */
+    fun parseAppOpMode(stdout: String, op: String): String? {
+        val m = Regex("(?m)^\\s*(?:Uid mode:\\s*)?(?:OP_)?" + Regex.escape(op) + ":\\s*([a-z_]+)").find(stdout)
+        return m?.groupValues?.get(1)
+    }
+
     fun parseIdentity(stdout: String): ShellIdentity? {
         val m = Regex("uid=(\\d+)\\(([^)]*)\\)").find(stdout) ?: return null
         return ShellIdentity(m.groupValues[1].toInt(), m.groupValues[2])
