@@ -16,6 +16,8 @@ data class AppSettings(
     val theme: ThemeMode = ThemeMode.SYSTEM,
     val auditDetail: AuditDetail = AuditDetail.FULL,
     val saveTerminal: Boolean = false,
+    /** Connect automatically when Wireless debugging is detected and this phone is already paired. */
+    val autoConnect: Boolean = true,
     /** Packages excluded from bulk plans. */
     val allowlist: Set<String> = emptySet(),
 )
@@ -28,12 +30,14 @@ class SettingsRepository(context: Context) {
     private val detailKey = stringPreferencesKey("audit_detail")
     private val saveKey = booleanPreferencesKey("save_terminal")
     private val allowKey = stringSetPreferencesKey("allowlist")
+    private val autoKey = booleanPreferencesKey("auto_connect")
 
     val flow: Flow<AppSettings> = store.data.map { p ->
         AppSettings(
             theme = p[themeKey]?.let { v -> ThemeMode.entries.firstOrNull { it.name == v } } ?: ThemeMode.SYSTEM,
             auditDetail = p[detailKey]?.let { v -> AuditDetail.entries.firstOrNull { it.name == v } } ?: AuditDetail.FULL,
             saveTerminal = p[saveKey] ?: false,
+            autoConnect = p[autoKey] ?: true,
             allowlist = p[allowKey] ?: emptySet(),
         )
     }
@@ -41,6 +45,7 @@ class SettingsRepository(context: Context) {
     suspend fun setTheme(t: ThemeMode) { store.edit { it[themeKey] = t.name } }
     suspend fun setAuditDetail(d: AuditDetail) { store.edit { it[detailKey] = d.name } }
     suspend fun setSaveTerminal(v: Boolean) { store.edit { it[saveKey] = v } }
+    suspend fun setAutoConnect(v: Boolean) { store.edit { it[autoKey] = v } }
     suspend fun toggleAllow(pkg: String) {
         store.edit {
             val cur = it[allowKey] ?: emptySet()

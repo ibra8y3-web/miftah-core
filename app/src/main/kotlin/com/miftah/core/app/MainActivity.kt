@@ -1,5 +1,6 @@
 package com.miftah.core.app
 
+import android.Manifest
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
@@ -9,13 +10,19 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 
 class MainActivity : ComponentActivity() {
     private val vm: MainViewModel by viewModels()
 
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* the notification simply won't show if denied */ }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         val actions = Actions(
             openAppInfo = { pkg -> safeStart(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", pkg, null))) },
             uninstallDialog = { pkg -> safeStart(Intent(Intent.ACTION_DELETE, Uri.fromParts("package", pkg, null))) },
@@ -27,6 +34,9 @@ class MainActivity : ComponentActivity() {
                 if (Build.VERSION.SDK_INT >= 33) {
                     safeStart(Intent(Settings.ACTION_APP_LOCALE_SETTINGS, Uri.fromParts("package", packageName, null)))
                 }
+            },
+            requestNotifications = {
+                if (Build.VERSION.SDK_INT >= 33) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
             },
         )
         setContent { MiftahApp(vm, actions) }

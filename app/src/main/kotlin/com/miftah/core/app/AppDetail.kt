@@ -21,7 +21,12 @@ internal fun AppDetailDialog(app: AppInfo, s: UiState, vm: MainViewModel, action
     AlertDialog(
         onDismissRequest = { vm.selectApp(null) },
         confirmButton = { TextButton(onClick = { vm.selectApp(null) }) { Text(stringResource(R.string.close)) } },
-        title = { Text(app.label) },
+        title = {
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                AppIcon(app.packageName, app.label, size = 40.dp)
+                Text(app.label, style = MaterialTheme.typography.titleLarge)
+            }
+        },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(app.packageName, style = MaterialTheme.typography.bodySmall)

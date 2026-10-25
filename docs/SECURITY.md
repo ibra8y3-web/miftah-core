@@ -14,3 +14,8 @@
 - Audit log is local SQLite; stdout/stderr are redacted for secret-like patterns before saving; "Minimal" detail drops command output. Exports show a preview and are shared only through the Android share sheet when you tap Share.
 - Terminal: user-typed commands run with shell privileges. The risk prompt is a heuristic, not a security boundary. Saving a session is off by default.
 - Logcat can contain private data; it is shown on screen only and never exported.
+
+## Update (auto pairing)
+- POST_NOTIFICATIONS is requested only when you tap "Start automatic pairing" (Android 13+).
+- mDNS discovery only lists the pairing/connect services advertised on the local network and keeps just the port numbers; nothing is sent anywhere. The reply receiver is not exported.
+- Auto-connect only runs when this phone is already paired, can be switched off in Settings, and only runs an identity query.

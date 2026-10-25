@@ -10,3 +10,6 @@ The authoring environment had JDK 21 only: no Gradle, Kotlin compiler, Android S
 | Instrumented tests, RTL screenshots | not written |
 
 Before trusting any destructive action, test on a spare device with a throw-away app. Update this file with real output after each build.
+
+## Added in the UI/pairing update (all UNTESTED, compiled only by CI)
+mDNS discovery (AdbDiscovery), PairingCoordinator + notification reply (PairingReceiver), auto-connect, adaptive launcher icon, real app icons, bottom-navigation redesign, light/dark brand theme. Real behaviour depends on the device (Wi-Fi, Wireless debugging on, notification permission on Android 13+). Android never exposes the pairing code to apps, so the user always types the 6 digits.

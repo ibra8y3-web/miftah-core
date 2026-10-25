@@ -8,3 +8,5 @@
 - Bulk plans with exclusion list, preview, per-step approval, stop-on-failure and undo.
 - Terminal with risk prompt, Audit log (SQLite) with JSON/CSV preview+share, Diagnostics (device/storage/battery/network/logcat), Settings (theme, log detail, session saving, language entry, exclusions), Extensions screen explaining why it is unavailable.
 - Fix: duplicate BouncyCastle classes (use jdk15to18 1.81 like libadb).
+- Adaptive app icon (with themed monochrome layer), real launcher icons in the app list, bottom-navigation redesign (cards, status pills, animated transitions, brand light/dark theme, Arabic-safe typography).
+- Automatic pairing: mDNS finds the ports, code typed in-app or via notification reply, automatic connect; advanced manual ports kept as fallback.

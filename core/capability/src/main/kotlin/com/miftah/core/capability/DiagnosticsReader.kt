@@ -43,7 +43,13 @@ class DiagnosticsReader(private val context: Context) {
         )
     }
 
-    fun network(): NetworkSnapshot? {
+    fun network(): NetworkSnapshot? = try {
+        readNetwork()
+    } catch (e: SecurityException) {
+        null // permission missing at runtime: report "not readable", never guess
+    }
+
+    private fun readNetwork(): NetworkSnapshot? {
         val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return null
         val net = cm.activeNetwork ?: return NetworkSnapshot(false, emptyList(), null)
         val caps = cm.getNetworkCapabilities(net) ?: return NetworkSnapshot(true, emptyList(), null)

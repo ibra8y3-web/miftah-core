@@ -1,19 +1,29 @@
 package com.miftah.core.app
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.miftah.core.execution.AdbState
@@ -27,42 +37,92 @@ class Actions(
     val uninstallDialog: (String) -> Unit,
     val share: (String, String) -> Unit,
     val openLocale: () -> Unit,
+    val requestNotifications: () -> Unit,
 )
+
+private enum class Dest(val label: Int, val icon: Int) {
+    HOME(R.string.nav_home, R.drawable.ic_home),
+    APPS(R.string.tab_apps, R.drawable.ic_apps),
+    ADB(R.string.tab_adb, R.drawable.ic_link),
+    TOOLS(R.string.nav_tools, R.drawable.ic_tools),
+    MORE(R.string.nav_more, R.drawable.ic_more),
+}
 
 @Composable
 fun MiftahApp(vm: MainViewModel, actions: Actions) {
     val state by vm.state.collectAsStateWithLifecycle()
-    var tab by rememberSaveable { mutableIntStateOf(0) }
-    val titles = listOf(
-        R.string.tab_dashboard, R.string.tab_adb, R.string.tab_capabilities, R.string.tab_apps, R.string.tab_plans,
-        R.string.tab_terminal, R.string.tab_audit, R.string.tab_diag, R.string.tab_settings, R.string.tab_extensions,
-    )
+    var dest by rememberSaveable { mutableStateOf(Dest.HOME) }
+    var toolsTab by rememberSaveable { mutableIntStateOf(0) }
+    var moreTab by rememberSaveable { mutableIntStateOf(0) }
     val dark = when (state.settings.theme) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
-    MaterialTheme(colorScheme = if (dark) darkColorScheme() else lightColorScheme()) {
-        Surface(Modifier.fillMaxSize()) {
-            Column(Modifier.statusBarsPadding()) {
-                ScrollableTabRow(selectedTabIndex = tab, edgePadding = 0.dp) {
-                    titles.forEachIndexed { i, t -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(stringResource(t)) }) }
+    MiftahTheme(dark) {
+        Scaffold(
+            containerColor = MaterialTheme.colorScheme.background,
+            bottomBar = {
+                NavigationBar {
+                    Dest.entries.forEach { d ->
+                        NavigationBarItem(
+                            selected = dest == d,
+                            onClick = { dest = d },
+                            icon = { Icon(painterResource(d.icon), contentDescription = null) },
+                            label = { Text(stringResource(d.label), maxLines = 1) },
+                        )
+                    }
                 }
-                when (tab) {
-                    0 -> Gated(state, vm::refresh) { Dashboard(state) }
-                    1 -> AdbScreen(state, vm)
-                    2 -> CapabilityList(state.capabilities)
-                    3 -> Gated(state, vm::refresh) { AppList(state, vm) }
-                    4 -> PlansScreen(state, vm)
-                    5 -> TerminalScreen(state, vm)
-                    6 -> AuditScreen(state, vm, actions)
-                    7 -> DiagnosticsScreen(state, vm, actions)
-                    8 -> SettingsScreen(state, vm, actions)
-                    else -> ExtensionsScreen()
+            },
+        ) { padding ->
+            Box(Modifier.padding(padding).consumeWindowInsets(padding).imePadding()) {
+                AnimatedContent(
+                    targetState = dest,
+                    transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(120)) },
+                    label = "destination",
+                ) { d ->
+                    when (d) {
+                        Dest.HOME -> Gated(state, vm::refresh) { Dashboard(state) { dest = Dest.ADB } }
+                        Dest.APPS -> Gated(state, vm::refresh) { AppList(state, vm) }
+                        Dest.ADB -> AdbScreen(state, vm, actions)
+                        Dest.TOOLS -> Tabbed(
+                            listOf(R.string.tab_plans, R.string.tab_terminal, R.string.tab_diag, R.string.tab_audit),
+                            toolsTab, { toolsTab = it },
+                        ) { i ->
+                            when (i) {
+                                0 -> PlansScreen(state, vm)
+                                1 -> TerminalScreen(state, vm)
+                                2 -> DiagnosticsScreen(state, vm, actions)
+                                else -> AuditScreen(state, vm, actions)
+                            }
+                        }
+                        Dest.MORE -> Tabbed(
+                            listOf(R.string.tab_capabilities, R.string.tab_settings, R.string.tab_extensions),
+                            moreTab, { moreTab = it },
+                        ) { i ->
+                            when (i) {
+                                0 -> CapabilityList(state.capabilities)
+                                1 -> SettingsScreen(state, vm, actions)
+                                else -> ExtensionsScreen()
+                            }
+                        }
+                    }
                 }
             }
-            Dialogs(state, vm, actions)
         }
+        Dialogs(state, vm, actions)
+    }
+}
+
+@Composable
+private fun Tabbed(titles: List<Int>, selected: Int, onSelect: (Int) -> Unit, content: @Composable (Int) -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        TabRow(selectedTabIndex = selected, containerColor = Color.Transparent) {
+            titles.forEachIndexed { i, t ->
+                Tab(selected = selected == i, onClick = { onSelect(i) }, text = { Text(stringResource(t), maxLines = 1) })
+            }
+        }
+        Box(Modifier.weight(1f)) { content(selected) }
     }
 }
 
@@ -80,33 +140,61 @@ private fun Gated(s: UiState, onRetry: () -> Unit, content: @Composable () -> Un
 }
 
 @Composable
-private fun Dashboard(s: UiState) {
+private fun Dashboard(s: UiState, onOpenAdb: () -> Unit) {
     val d = s.device
-    LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        item {
-            val level = if (s.level == AccessLevel.ADB) R.string.access_level_adb else R.string.access_level_standard
-            Text(stringResource(level), style = MaterialTheme.typography.titleMedium)
+    val installed = s.apps.filter { it.installed }
+    val connected = s.adbState == AdbState.CONNECTED
+    ScreenColumn {
+        Card(
+            shape = MaterialTheme.shapes.extraLarge,
+            colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Box(Modifier.background(Brush.linearGradient(listOf(Color(0xFF6A3DF0), Color(0xFF24105F)))).padding(20.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Icon(painterResource(R.drawable.ic_key), contentDescription = null, tint = Color.White, modifier = Modifier.size(44.dp))
+                        Column {
+                            Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineSmall, color = Color.White)
+                            Text(
+                                stringResource(if (s.level == AccessLevel.ADB) R.string.access_level_adb else R.string.access_level_standard),
+                                style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.85f),
+                            )
+                        }
+                    }
+                    StatusPill(
+                        stringResource(R.string.adb_state_label, stringResource(adbStateName(s.adbState))),
+                        tone = when (s.adbState) { AdbState.CONNECTED -> Tone.OK; AdbState.FAILED -> Tone.ERROR; else -> Tone.NEUTRAL },
+                        iconRes = if (connected) R.drawable.ic_check else R.drawable.ic_link,
+                    )
+                    if (!connected) {
+                        Button(
+                            onClick = onOpenAdb,
+                            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color(0xFF3B1AA6)),
+                        ) { Text(stringResource(R.string.cta_connect)) }
+                    }
+                }
+            }
         }
-        item { Text(stringResource(R.string.adb_state_label, stringResource(adbStateName(s.adbState)))) }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            StatCard(installed.size.toString(), stringResource(R.string.stat_apps), Modifier.weight(1f))
+            StatCard(installed.count { !it.enabled }.toString(), stringResource(R.string.stat_disabled), Modifier.weight(1f))
+            StatCard(s.capabilities.count { it.status is CapabilityStatus.Supported }.toString(), stringResource(R.string.stat_caps), Modifier.weight(1f))
+        }
         if (d != null) {
-            item { Text("${d.manufacturer} ${d.model}") }
-            item { Text(stringResource(R.string.android_version, d.release, d.sdkInt)) }
-            item { Text(stringResource(R.string.abis, d.abis.joinToString())) }
+            SectionCard(title = stringResource(R.string.device_title)) {
+                Text("${d.manufacturer} ${d.model}", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.android_version, d.release, d.sdkInt))
+                Text(stringResource(R.string.abis, d.abis.joinToString()), style = MaterialTheme.typography.bodySmall)
+            }
         }
-        item {
-            val inst = s.apps.filter { it.installed }
-            Text(stringResource(R.string.apps_found, inst.size, inst.count { !it.isSystem }, inst.count { it.isSystem }))
-        }
-        item {
-            val c = s.capabilities
-            Text(stringResource(R.string.cap_summary, c.count { it.status is CapabilityStatus.Supported }, c.size))
-        }
-        item { Text(stringResource(R.string.recent_ops), style = MaterialTheme.typography.titleSmall) }
-        if (s.audit.entries.isEmpty()) {
-            item { Text(stringResource(R.string.no_ops)) }
-        } else {
-            items(s.audit.entries.take(3), key = { it.result.operationId }) { e ->
-                Text("${e.result.name} • ${e.target} • ${stringResource(outcomeLabel(e.result.outcome))}", style = MaterialTheme.typography.bodySmall)
+        SectionCard(title = stringResource(R.string.recent_ops)) {
+            if (s.audit.entries.isEmpty()) {
+                Text(stringResource(R.string.no_ops))
+            } else {
+                s.audit.entries.take(3).forEach { e ->
+                    Text("${e.result.name} • ${e.target} • ${stringResource(outcomeLabel(e.result.outcome))}", style = MaterialTheme.typography.bodySmall)
+                }
             }
         }
     }
@@ -114,54 +202,89 @@ private fun Dashboard(s: UiState) {
 
 @Composable
 private fun CapabilityList(list: List<Capability>) {
-    LazyColumn(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        items(list, key = { it.id }) { c ->
-            Column {
-                Text(stringResource(capName(c.id)), style = MaterialTheme.typography.titleSmall)
-                Text(stringResource(statusLabel(c.status)))
+    ScreenColumn {
+        list.forEach { c ->
+            SectionCard {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(capName(c.id)), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                    val supported = c.status is CapabilityStatus.Supported
+                    StatusPill(
+                        stringResource(statusLabel(c.status)), capTone(c.status),
+                        if (supported) R.drawable.ic_check else R.drawable.ic_warning,
+                    )
+                }
                 reasonOf(c.status)?.let { Text(stringResource(reasonText(it)), style = MaterialTheme.typography.bodySmall) }
             }
         }
     }
 }
 
+private fun capTone(s: CapabilityStatus): Tone = when (s) {
+    CapabilityStatus.Supported -> Tone.OK
+    is CapabilityStatus.HigherPrivilegeRequired, is CapabilityStatus.PermissionRequired -> Tone.WARN
+    is CapabilityStatus.UnsupportedOnDevice, is CapabilityStatus.Failed -> Tone.ERROR
+    is CapabilityStatus.TemporarilyUnavailable -> Tone.NEUTRAL
+}
+
 @Composable
 private fun AppList(s: UiState, vm: MainViewModel) {
     val shown = remember(s.apps, s.query, s.filter) { AppQuery.apply(s.apps, s.query, s.filter) }
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+    Column(Modifier.fillMaxSize()) {
         OutlinedTextField(
             value = s.query, onValueChange = vm::setQuery, singleLine = true,
+            shape = MaterialTheme.shapes.extraLarge,
+            leadingIcon = { Icon(painterResource(R.drawable.ic_search), contentDescription = null) },
             label = { Text(stringResource(R.string.search)) },
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         )
-        Row(Modifier.padding(vertical = 8.dp).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             AppFilter.entries.forEach { f ->
                 FilterChip(selected = s.filter == f, onClick = { vm.setFilter(f) }, label = { Text(stringResource(filterName(f))) })
             }
         }
         if (s.selection.isNotEmpty()) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.plan_selected, s.selection.size))
+            Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(stringResource(R.string.plan_selected, s.selection.size), style = MaterialTheme.typography.labelLarge)
                 TextButton(onClick = vm::clearSelection) { Text(stringResource(R.string.plan_clear_btn)) }
             }
         }
         if (shown.isEmpty()) {
-            Text(stringResource(R.string.no_results), Modifier.padding(16.dp))
+            Text(stringResource(R.string.no_results), Modifier.padding(24.dp))
         } else {
-            LazyColumn {
+            LazyColumn(contentPadding = PaddingValues(vertical = 8.dp)) {
                 items(shown, key = { it.packageName }) { a ->
-                    Row(Modifier.fillMaxWidth().clickable { vm.selectApp(a) }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = a.packageName in s.selection, onCheckedChange = { vm.toggleSelect(a.packageName) })
-                        Column(Modifier.weight(1f)) {
-                            Text(a.label, style = MaterialTheme.typography.titleSmall)
-                            Text(a.packageName, style = MaterialTheme.typography.bodySmall)
-                            Text("${a.versionName ?: "-"} (${a.versionCode})", style = MaterialTheme.typography.bodySmall)
-                        }
-                    }
-                    HorizontalDivider()
+                    AppRow(a, a.packageName in s.selection, onClick = { vm.selectApp(a) }, onToggle = { vm.toggleSelect(a.packageName) })
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AppRow(a: AppInfo, selected: Boolean, onClick: () -> Unit, onToggle: () -> Unit) {
+    val system = stringResource(R.string.kind_system)
+    val removed = stringResource(R.string.state_removed)
+    val disabled = stringResource(R.string.state_disabled)
+    val tags = listOfNotNull(
+        a.versionName ?: "-",
+        if (a.isSystem) system else null,
+        if (!a.installed) removed else if (!a.enabled) disabled else null,
+    ).joinToString(" • ")
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        AppIcon(a.packageName, a.label)
+        Column(Modifier.weight(1f)) {
+            Text(a.label, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(a.packageName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(tags, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Checkbox(checked = selected, onCheckedChange = { onToggle() })
     }
 }
 

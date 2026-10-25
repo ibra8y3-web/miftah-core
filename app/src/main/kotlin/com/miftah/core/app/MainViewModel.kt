@@ -18,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -66,6 +67,9 @@ data class UiState(
     val adbState: AdbState = AdbState.NOT_CONFIGURED,
     val adbError: String? = null,
     val adbIdentity: ShellIdentity? = null,
+    val detectedPairingPort: Int? = null,
+    val detectedConnectPort: Int? = null,
+    val pairingActive: Boolean = false,
     val selectedApp: AppInfo? = null,
     val pending: PendingOp? = null,
     val busy: Boolean = false,
@@ -85,7 +89,11 @@ data class UiState(
 class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     private val inventory = PackageInventory(app)
     private val engine = CapabilityEngine()
-    private val transport = LibAdbTransport(app)
+    private val miftah = app as MiftahApplication
+    private val transport = miftah.transport
+    private val discovery = miftah.discovery
+    private val pairing = miftah.pairing
+    private var lastAutoPort = -1
     private val executor = ExecutionEngine(transport)
     private val userId = Process.myUid() / 100_000
     private val sdk = Build.VERSION.SDK_INT
@@ -107,6 +115,16 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         refresh()
         reloadAudit()
         viewModelScope.launch { settingsRepo.flow.collect { s -> _state.update { it.copy(settings = s) } } }
+        discovery.startConnect()
+        viewModelScope.launch {
+            combine(discovery.pairingPort, discovery.connectPort, pairing.active) { p, c, a -> Triple(p, c, a) }
+                .collect { (p, c, a) ->
+                    _state.update { it.copy(detectedPairingPort = p, detectedConnectPort = c, pairingActive = a) }
+                }
+        }
+        viewModelScope.launch {
+            discovery.connectPort.filterNotNull().collect { port -> maybeAutoConnect(port) }
+        }
         viewModelScope.launch {
             combine(transport.state, transport.lastError, transport.identity) { s, e, i -> Triple(s, e, i) }
                 .collect { (s, e, i) ->
@@ -117,6 +135,19 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
                     }
                 }
         }
+    }
+
+    override fun onCleared() {
+        discovery.stopConnect()
+        super.onCleared()
+    }
+
+    /** Connects by itself, once per advertised port, only if this phone is already paired and the setting is on. */
+    private suspend fun maybeAutoConnect(port: Int) {
+        val s = _state.value
+        if (!s.settings.autoConnect || port == lastAutoPort || s.adbState != AdbState.DISCONNECTED) return
+        lastAutoPort = port
+        transport.connect(LOOPBACK, port)
     }
 
     // ---------------- inventory ----------------
@@ -143,6 +174,13 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     // ---------------- ADB ----------------
     fun pair(port: String, code: String) { viewModelScope.launch { transport.pair(LOOPBACK, port.toIntOrNull() ?: -1, code) } }
     fun connect(port: String) { viewModelScope.launch { transport.connect(LOOPBACK, port.toIntOrNull() ?: -1) } }
+    fun beginAutoPairing() { pairing.begin() }
+    fun cancelAutoPairing() { pairing.cancel() }
+    fun pairWithCode(code: String) { viewModelScope.launch { pairing.submitCode(code, notify = false) } }
+    fun connectDetected() {
+        val port = _state.value.detectedConnectPort ?: -1
+        viewModelScope.launch { transport.connect(LOOPBACK, port) }
+    }
     fun disconnect() { viewModelScope.launch { transport.disconnect() } }
     fun clearPairing() { viewModelScope.launch { transport.clearPairing() } }
 
@@ -450,6 +488,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     fun setTheme(t: ThemeMode) { viewModelScope.launch { settingsRepo.setTheme(t) } }
     fun setAuditDetail(d: AuditDetail) { viewModelScope.launch { settingsRepo.setAuditDetail(d) } }
     fun setSaveTerminal(v: Boolean) { viewModelScope.launch { settingsRepo.setSaveTerminal(v) } }
+    fun setAutoConnect(v: Boolean) { viewModelScope.launch { settingsRepo.setAutoConnect(v) } }
     fun toggleAllow(pkg: String) { viewModelScope.launch { settingsRepo.toggleAllow(pkg) } }
 
     private companion object { const val LOOPBACK = "127.0.0.1" }
