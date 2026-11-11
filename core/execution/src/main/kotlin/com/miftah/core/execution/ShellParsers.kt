@@ -2,6 +2,7 @@ package com.miftah.core.execution
 
 data class PackageListParse(val packages: Set<String>, val malformedLines: Int)
 data class ShellIdentity(val uid: Int, val name: String)
+data class DensityInfo(val physical: Int?, val override: Int?)
 
 object ShellParsers {
     fun parsePackageList(stdout: String): PackageListParse {
@@ -20,6 +21,21 @@ object ShellParsers {
     fun parseAppOpMode(stdout: String, op: String): String? {
         val m = Regex("(?m)^\\s*(?:Uid mode:\\s*)?(?:OP_)?" + Regex.escape(op) + ":\\s*([a-z_]+)").find(stdout)
         return m?.groupValues?.get(1)
+    }
+
+    /** `wm density` prints "Physical density: N" and, only when changed, "Override density: M". */
+    fun parseDensity(stdout: String): DensityInfo? {
+        val phys = Regex("Physical density:\\s*(\\d+)").find(stdout)?.groupValues?.get(1)?.toIntOrNull()
+        val over = Regex("Override density:\\s*(\\d+)").find(stdout)?.groupValues?.get(1)?.toIntOrNull()
+        return if (phys == null && over == null) null else DensityInfo(phys, over)
+    }
+
+    fun normalizeScale(s: String): String? = s.trim().toDoubleOrNull()?.toString()
+
+    /** Raw "last access" text from a line such as `CAMERA: allow; time=+3h2m ago`; null when never accessed/unknown. */
+    fun parseAppOpLastAccess(stdout: String, op: String): String? {
+        val line = stdout.lineSequence().firstOrNull { it.contains("$op:") } ?: return null
+        return Regex("time=([^;\\n]+)").find(line)?.groupValues?.get(1)?.trim()
     }
 
     fun parseIdentity(stdout: String): ShellIdentity? {

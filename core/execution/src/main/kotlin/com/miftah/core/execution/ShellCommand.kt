@@ -8,12 +8,19 @@ object Validators {
     private val PERMISSION = Regex("^[A-Za-z][A-Za-z0-9_.]*$")
     private val APPOP = Regex("^[A-Z][A-Z0-9_]*$")
     val APPOP_MODES = setOf("allow", "ignore", "deny", "default", "foreground")
+    private val COMPONENT = Regex("^[A-Za-z0-9_.\\$]{1,300}$")
+    private val SCALE = Regex("^[0-9]{1,2}(\\.[0-9]{1,2})?$")
+    val ANIM_KEYS = listOf("window_animation_scale", "transition_animation_scale", "animator_duration_scale")
 
     fun requirePackage(s: String) = require(PACKAGE.matches(s)) { "Invalid package name" }
     fun requireProp(s: String) = require(PROP.matches(s)) { "Invalid property key" }
     fun requireUser(id: Int) = require(id >= 0) { "Invalid user id" }
     fun requirePermission(s: String) = require(PERMISSION.matches(s)) { "Invalid permission name" }
     fun requireAppOp(s: String) = require(APPOP.matches(s)) { "Invalid AppOps operation" }
+    fun requireComponent(s: String) = require(COMPONENT.matches(s)) { "Invalid component name" }
+    fun requireDensity(d: Int) = require(d in 100..1000) { "Invalid density" }
+    fun requireAnimKey(s: String) = require(s in ANIM_KEYS) { "Invalid animation setting" }
+    fun requireScale(s: String) = require(SCALE.matches(s) && s.toDouble() <= 10.0) { "Invalid scale" }
     fun requireAppOpMode(s: String) = require(s in APPOP_MODES) { "Invalid AppOps mode" }
 }
 
@@ -114,5 +121,43 @@ sealed class ShellCommand(
             Validators.requireAppOpMode(mode); Validators.requireUser(userId)
         }
         override fun render() = "cmd appops set --user $userId $pkg $op $mode"
+    }
+
+    data class DisableComponent(val pkg: String, val component: String, val userId: Int) :
+        ShellCommand("disable-component", true, RollbackAvailability.AVAILABLE, "re-enable with pm enable") {
+        init { Validators.requirePackage(pkg); Validators.requireComponent(component); Validators.requireUser(userId) }
+        override fun render() = "pm disable --user $userId '$pkg/$component'"
+    }
+
+    data class EnableComponent(val pkg: String, val component: String, val userId: Int) :
+        ShellCommand("enable-component", false, RollbackAvailability.AVAILABLE, "disable again with pm disable") {
+        init { Validators.requirePackage(pkg); Validators.requireComponent(component); Validators.requireUser(userId) }
+        override fun render() = "pm enable --user $userId '$pkg/$component'"
+    }
+
+    data class WmDensity(val dpi: Int) :
+        ShellCommand("wm-density", true, RollbackAvailability.AVAILABLE, "reset or restore the previous density") {
+        init { Validators.requireDensity(dpi) }
+        override fun render() = "wm density $dpi"
+    }
+
+    data object WmDensityReset : ShellCommand("wm-density-reset", false, RollbackAvailability.AVAILABLE, "set a density again") {
+        override fun render() = "wm density reset"
+    }
+
+    data object WmDensityQuery : ShellCommand("wm-density-query", false, RollbackAvailability.UNAVAILABLE, "read-only") {
+        override fun render() = "wm density"
+    }
+
+    data class SettingsPutGlobal(val key: String, val value: String) :
+        ShellCommand("settings-put-global", false, RollbackAvailability.AVAILABLE, "restore the previous value") {
+        init { Validators.requireAnimKey(key); Validators.requireScale(value) }
+        override fun render() = "settings put global $key $value"
+    }
+
+    data class SettingsGetGlobal(val key: String) :
+        ShellCommand("settings-get-global", false, RollbackAvailability.UNAVAILABLE, "read-only") {
+        init { Validators.requireAnimKey(key) }
+        override fun render() = "settings get global $key"
     }
 }

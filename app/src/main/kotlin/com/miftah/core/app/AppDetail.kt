@@ -102,6 +102,19 @@ internal fun AppDetailDialog(app: AppInfo, s: UiState, vm: MainViewModel, action
                             }
                         }
                     }
+
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    Text(stringResource(R.string.sensors_title), style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.sensors_note), style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = { vm.readSensors(app) }, enabled = canManage) { Text(stringResource(R.string.sensors_read_btn)) }
+                    val sv = s.sensors?.takeIf { it.pkg == app.packageName }
+                    if (sv != null) {
+                        if (sv.loading) Text(stringResource(R.string.working))
+                        sv.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                        sv.lastAccess.forEach { (op, t) ->
+                            Text("$op: ${t ?: stringResource(R.string.sensors_never)}", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
                 }
             }
         },

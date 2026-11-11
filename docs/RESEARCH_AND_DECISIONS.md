@@ -22,3 +22,9 @@
 - Rollback is offered only when the state read BEFORE the operation proves it was a real change (see `Rollback`), and only right after the operation or inside a plan run, not from old audit rows.
 - Bulk plans exclude uninstall on purpose. Uninstall for user requires typing the package name.
 - Probes treat any unparseable output as "unknown", which shows the result as NOT verified rather than success.
+
+## Tools update decisions
+- Ad blocker is DNS-only on purpose (route one virtual resolver address into the tunnel; other traffic never touches the app) to avoid writing a full TCP/IP stack. Firewall is a separate mode because `addAllowedApplication` and `addDisallowedApplication` cannot be combined and Android allows a single VPN.
+- Built-in blocklist is a short list of well-known ad/tracker networks written from general knowledge, not an audited public list; users should import a maintained list for real coverage.
+- Display tweaks always capture the previous value and auto-revert after 15 s unless confirmed, because a bad density can make the screen unusable.
+- Boot receivers are toggled per component (`pm enable/disable`), not per package, and verified through PackageManager.

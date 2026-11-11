@@ -1,9 +1,11 @@
 package com.miftah.core.app
 
 import android.Manifest
+import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
+import android.net.VpnService
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -19,6 +21,13 @@ class MainActivity : ComponentActivity() {
 
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* the notification simply won't show if denied */ }
+
+    private var pendingVpn: VpnConfig? = null
+    private val vpnConsent = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val cfg = pendingVpn
+        pendingVpn = null
+        if (result.resultCode == Activity.RESULT_OK && cfg != null) launchVpn(cfg)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -38,6 +47,8 @@ class MainActivity : ComponentActivity() {
             requestNotifications = {
                 if (Build.VERSION.SDK_INT >= 33) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
             },
+            startVpn = ::startVpn,
+            stopVpn = { stopService(Intent(this, MiftahVpnService::class.java)) },
         )
         setContent { MiftahApp(vm, actions) }
     }
@@ -48,5 +59,27 @@ class MainActivity : ComponentActivity() {
         } catch (e: ActivityNotFoundException) {
             Toast.makeText(this, R.string.action_unavailable, Toast.LENGTH_SHORT).show()
         }
+    }
+
+    /** Android shows its own VPN consent dialog the first time; the app never bypasses it. */
+    private fun startVpn(cfg: VpnConfig) {
+        val prepare = VpnService.prepare(this)
+        if (prepare == null) {
+            launchVpn(cfg)
+        } else {
+            pendingVpn = cfg
+            vpnConsent.launch(prepare)
+        }
+    }
+
+    private fun launchVpn(cfg: VpnConfig) {
+        startService(
+            Intent(this, MiftahVpnService::class.java)
+                .setAction(MiftahVpnService.ACTION_START)
+                .putExtra(MiftahVpnService.EXTRA_MODE, cfg.mode.name)
+                .putExtra(MiftahVpnService.EXTRA_UPSTREAM, cfg.upstream.name)
+                .putStringArrayListExtra(MiftahVpnService.EXTRA_EXCLUDED, ArrayList(cfg.excluded))
+                .putStringArrayListExtra(MiftahVpnService.EXTRA_BLOCKED, ArrayList(cfg.blocked)),
+        )
     }
 }

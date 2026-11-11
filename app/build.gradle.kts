@@ -22,6 +22,7 @@ dependencies {
     implementation(project(":core:capability"))
     implementation(project(":core:adb"))
     implementation(project(":core:audit"))
+    implementation(project(":core:net"))
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation(platform("androidx.compose:compose-bom:2024.10.01"))

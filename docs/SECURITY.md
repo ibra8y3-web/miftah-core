@@ -19,3 +19,9 @@
 - POST_NOTIFICATIONS is requested only when you tap "Start automatic pairing" (Android 13+).
 - mDNS discovery only lists the pairing/connect services advertised on the local network and keeps just the port numbers; nothing is sent anywhere. The reply receiver is not exported.
 - Auto-connect only runs when this phone is already paired, can be switched off in Settings, and only runs an identity query.
+
+## Update (tools)
+- Local VPN: the only data handled are DNS question names, matched on-device; they are not stored except a short in-memory "recently blocked" list. Forwarded lookups go to the DNS server you choose (default: your network's own DNS). The VPN consent dialog is Android's and is never bypassed.
+- Blocklist import downloads only from an https address you type, up to 8 MB; lists are stored in app-private files.
+- Component commands quote `package/class` in single quotes after strict character validation. Display changes revert automatically unless confirmed.
+- Privacy doctor reads only platform state; it changes nothing by itself.

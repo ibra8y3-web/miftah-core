@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.database.SQLException
 import android.os.Build
 import android.os.Process
+import android.provider.Settings
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.miftah.core.adb.LibAdbTransport
@@ -12,9 +13,12 @@ import com.miftah.core.audit.AuditStore
 import com.miftah.core.capability.*
 import com.miftah.core.execution.*
 import com.miftah.core.model.*
+import com.miftah.core.net.BlocklistParser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -22,7 +26,11 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.UUID
 
 data class PendingOp(val label: String, val pkg: String, val command: ShellCommand, val isSystem: Boolean, val typed: Boolean)
@@ -55,6 +63,18 @@ data class AuditUi(
     val exportPreview: String? = null, val exportMime: String = "text/plain", val confirmClear: Boolean = false,
 )
 
+data class PrivacyUi(val report: PrivacyReport? = null, val loading: Boolean = false, val error: String? = null)
+data class StartupUi(val entries: List<StartupEntry> = emptyList(), val loading: Boolean = false, val error: String? = null)
+data class DisplayUi(
+    val physical: Int? = null, val override: Int? = null, val scales: Map<String, String?> = emptyMap(),
+    val loading: Boolean = false, val error: String? = null, val revertIn: Int? = null,
+)
+data class ShieldUi(
+    val counts: BlocklistCounts = BlocklistCounts(0, 0, 0, 0), val importing: Boolean = false,
+    val message: String? = null, val privateDns: String? = null, val systemVpn: Boolean? = null,
+)
+data class SensorsView(val pkg: String, val lastAccess: Map<String, String?>, val loading: Boolean, val error: String?)
+
 data class UiState(
     val loading: Boolean = true,
     val error: String? = null,
@@ -84,6 +104,12 @@ data class UiState(
     val diag: DiagUi = DiagUi(),
     val audit: AuditUi = AuditUi(),
     val settings: AppSettings = AppSettings(),
+    val privacy: PrivacyUi = PrivacyUi(),
+    val startup: StartupUi = StartupUi(),
+    val display: DisplayUi = DisplayUi(),
+    val shield: ShieldUi = ShieldUi(),
+    val vpn: VpnUiState = VpnUiState(),
+    val sensors: SensorsView? = null,
 )
 
 class MainViewModel(private val app: Application) : AndroidViewModel(app) {
@@ -101,7 +127,15 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     private val settingsRepo = SettingsRepository(app)
     private val permReader = PermissionReader(app)
     private val diagReader = DiagnosticsReader(app)
-    private val verifiers = Verifiers(transport, userId, permissionState = { pkg, perm -> permReader.state(pkg, perm) })
+    private val privacyScanner = PrivacyScanner(app)
+    private val startupScanner = StartupScanner(app)
+    private val verifiers = Verifiers(
+        transport, userId,
+        permissionState = { pkg, perm -> permReader.state(pkg, perm) },
+        componentState = { pkg, cls -> startupScanner.state(pkg, cls) },
+    )
+    private var revertJob: Job? = null
+    private var pendingInverse: ShellCommand? = null
     private val planRunner = PlanRunner(executor, isConnected = { transport.state.value == AdbState.CONNECTED })
     private val terminalRunner = TerminalRunner(transport)
     private var approvalDeferred: CompletableDeferred<Boolean>? = null
@@ -115,6 +149,13 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         refresh()
         reloadAudit()
         viewModelScope.launch { settingsRepo.flow.collect { s -> _state.update { it.copy(settings = s) } } }
+        viewModelScope.launch {
+            VpnRuntime.state.collect { v ->
+                _state.update { it.copy(vpn = v) }
+                delay(800)
+                _state.update { it.copy(shield = it.shield.copy(systemVpn = diagReader.vpnActive())) }
+            }
+        }
         discovery.startConnect()
         viewModelScope.launch {
             combine(discovery.pairingPort, discovery.connectPort, pairing.active) { p, c, a -> Triple(p, c, a) }
@@ -227,7 +268,7 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
 
     // ---------------- single operations ----------------
     fun selectApp(a: AppInfo?) {
-        _state.update { it.copy(selectedApp = a, perm = null, appOps = null) }
+        _state.update { it.copy(selectedApp = a, perm = null, appOps = null, sensors = null) }
         if (a != null && a.installed) loadPermissions(a.packageName)
     }
 
@@ -264,11 +305,19 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
         _state.update { it.copy(pending = null, selectedApp = null, busy = true) }
         viewModelScope.launch {
             val result = execute(p)
-            val undo = if (result.isConfirmedSuccess) {
+            val isDensity = p.command is ShellCommand.WmDensity
+            val startsCountdown = isDensity && result.outcome == Outcome.SUCCEEDED
+            val undo = if (result.isConfirmedSuccess && !isDensity) {
                 Rollback.inverse(p.command, result.previousState)?.let { PendingOp(p.label, p.pkg, it, p.isSystem, false) }
             } else null
-            _state.update { it.copy(busy = false, lastResult = result, lastUndo = undo) }
+            _state.update { it.copy(busy = false, lastResult = if (startsCountdown) null else result, lastUndo = undo) }
             refresh()
+            when (p.command) {
+                is ShellCommand.WmDensity -> if (startsCountdown) startRevertCountdown(p.command, result)
+                is ShellCommand.WmDensityReset -> loadDisplay()
+                is ShellCommand.DisableComponent, is ShellCommand.EnableComponent -> loadStartup()
+                else -> {}
+            }
         }
     }
 
@@ -491,5 +540,229 @@ class MainViewModel(private val app: Application) : AndroidViewModel(app) {
     fun setAutoConnect(v: Boolean) { viewModelScope.launch { settingsRepo.setAutoConnect(v) } }
     fun toggleAllow(pkg: String) { viewModelScope.launch { settingsRepo.toggleAllow(pkg) } }
 
-    private companion object { const val LOOPBACK = "127.0.0.1" }
+    // ---------------- privacy doctor ----------------
+    fun scanPrivacy() {
+        _state.update { it.copy(privacy = it.privacy.copy(loading = true, error = null)) }
+        viewModelScope.launch {
+            try {
+                val report = privacyScanner.scan()
+                _state.update { it.copy(privacy = PrivacyUi(report, false, null)) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update { it.copy(privacy = it.privacy.copy(loading = false, error = e.message ?: e.javaClass.simpleName)) }
+            }
+        }
+    }
+
+    fun readSensors(a: AppInfo) {
+        val pkg = a.packageName
+        _state.update { it.copy(sensors = SensorsView(pkg, emptyMap(), true, null)) }
+        viewModelScope.launch {
+            try {
+                val map = LinkedHashMap<String, String?>()
+                for (op in SENSOR_OPS) {
+                    val r = executor.run(ShellCommand.AppOpsGet(pkg, op, userId))
+                    map[op] = if (r.outcome == Outcome.SUCCEEDED && r.exitCode == 0) ShellParsers.parseAppOpLastAccess(r.stdout, op) else null
+                }
+                _state.update { it.copy(sensors = SensorsView(pkg, map, false, null)) }
+            } catch (e: IllegalArgumentException) {
+                _state.update { it.copy(sensors = SensorsView(pkg, emptyMap(), false, e.message)) }
+            }
+        }
+    }
+
+    // ---------------- startup manager ----------------
+    fun loadStartup() {
+        _state.update { it.copy(startup = it.startup.copy(loading = true, error = null)) }
+        viewModelScope.launch {
+            try {
+                val list = startupScanner.scan()
+                _state.update { it.copy(startup = StartupUi(list, false, null)) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _state.update { it.copy(startup = it.startup.copy(loading = false, error = e.message ?: e.javaClass.simpleName)) }
+            }
+        }
+    }
+
+    fun askToggleComponent(entry: StartupEntry, component: String, enable: Boolean) {
+        val cmd = try {
+            if (enable) ShellCommand.EnableComponent(entry.pkg, component, userId) else ShellCommand.DisableComponent(entry.pkg, component, userId)
+        } catch (e: IllegalArgumentException) {
+            _state.update { it.copy(lastResult = rejected("component", e.message ?: "invalid component")) }
+            return
+        }
+        _state.update { it.copy(pending = PendingOp(entry.label, entry.pkg, cmd, entry.isSystem, false)) }
+    }
+
+    // ---------------- display tweaks ----------------
+    fun loadDisplay() {
+        if (_state.value.adbState != AdbState.CONNECTED) return
+        _state.update { it.copy(display = it.display.copy(loading = true, error = null)) }
+        viewModelScope.launch {
+            val d = executor.run(ShellCommand.WmDensityQuery)
+            val info = if (d.outcome == Outcome.SUCCEEDED && d.exitCode == 0) ShellParsers.parseDensity(d.stdout) else null
+            val scales = LinkedHashMap<String, String?>()
+            for (k in Validators.ANIM_KEYS) {
+                val r = executor.run(ShellCommand.SettingsGetGlobal(k))
+                scales[k] = if (r.outcome == Outcome.SUCCEEDED && r.exitCode == 0) {
+                    r.stdout.trim().let { if (it.isEmpty() || it == "null") "default" else it }
+                } else null
+            }
+            _state.update {
+                it.copy(display = it.display.copy(
+                    physical = info?.physical, override = info?.override, scales = scales, loading = false,
+                    error = if (info == null) "unreadable" else null,
+                ))
+            }
+        }
+    }
+
+    /** dpi == null means "back to the default density". */
+    fun askDensity(dpi: Int?) {
+        val cmd = try {
+            if (dpi == null) ShellCommand.WmDensityReset else ShellCommand.WmDensity(dpi)
+        } catch (e: IllegalArgumentException) {
+            _state.update { it.copy(lastResult = rejected("wm-density", e.message ?: "invalid density")) }
+            return
+        }
+        _state.update { it.copy(pending = PendingOp("Display", "wm density", cmd, false, false)) }
+    }
+
+    fun setAnimationScale(value: String) {
+        _state.update { it.copy(busy = true) }
+        viewModelScope.launch {
+            var last: OperationResult? = null
+            for (key in Validators.ANIM_KEYS) {
+                val cmd = try { ShellCommand.SettingsPutGlobal(key, value) } catch (e: IllegalArgumentException) {
+                    last = rejected(key, e.message ?: "invalid value"); break
+                }
+                val r = executor.run(cmd, verification = verifiers.forCommand(cmd))
+                audit(key, r)
+                last = r
+                if (!r.isConfirmedSuccess) break
+            }
+            _state.update { it.copy(busy = false, lastResult = last, lastUndo = null) }
+            loadDisplay()
+        }
+    }
+
+    private fun startRevertCountdown(command: ShellCommand, result: OperationResult) {
+        val inverse = Rollback.inverse(command, result.previousState) ?: ShellCommand.WmDensityReset
+        pendingInverse = inverse
+        revertJob?.cancel()
+        revertJob = viewModelScope.launch {
+            for (sec in REVERT_SECONDS downTo 1) {
+                _state.update { it.copy(display = it.display.copy(revertIn = sec)) }
+                delay(1000)
+            }
+            performRevert(inverse)
+        }
+    }
+
+    private suspend fun performRevert(inverse: ShellCommand) {
+        _state.update { it.copy(display = it.display.copy(revertIn = null), busy = true) }
+        val r = executor.run(inverse, confirmed = true, verification = verifiers.forCommand(inverse))
+        audit("display", r)
+        _state.update { it.copy(busy = false, lastResult = r, lastUndo = null) }
+        loadDisplay()
+    }
+
+    fun keepDisplay() {
+        revertJob?.cancel()
+        _state.update { it.copy(display = it.display.copy(revertIn = null)) }
+        loadDisplay()
+    }
+
+    fun revertDisplayNow() {
+        val inverse = pendingInverse ?: return
+        revertJob?.cancel()
+        viewModelScope.launch { performRevert(inverse) }
+    }
+
+    // ---------------- shield (ad blocker + firewall) ----------------
+    fun refreshShield() {
+        viewModelScope.launch {
+            val counts = withContext(Dispatchers.IO) { BlocklistFiles.counts(app) }
+            val pdns = try { Settings.Global.getString(app.contentResolver, "private_dns_mode") } catch (e: SecurityException) { null }
+            _state.update { it.copy(shield = it.shield.copy(counts = counts, privateDns = pdns, systemVpn = diagReader.vpnActive())) }
+        }
+    }
+
+    fun setUpstream(u: Upstream) { viewModelScope.launch { settingsRepo.setUpstream(u) } }
+    fun toggleExcluded(pkg: String) { viewModelScope.launch { settingsRepo.toggleExcluded(pkg) } }
+    fun toggleBlocked(pkg: String) { viewModelScope.launch { settingsRepo.toggleBlocked(pkg) } }
+    fun addSelectionToExcluded() { val sel = _state.value.selection; viewModelScope.launch { settingsRepo.addExcluded(sel) } }
+    fun addSelectionToBlocked() { val sel = _state.value.selection - _state.value.ownPackage; viewModelScope.launch { settingsRepo.addBlocked(sel) } }
+
+    private fun shieldMessage(text: String?) = _state.update { it.copy(shield = it.shield.copy(message = text)) }
+
+    fun addDomain(text: String, allow: Boolean) {
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                BlocklistFiles.add(app, if (allow) BlocklistFiles.ALLOW else BlocklistFiles.CUSTOM, text)
+            }
+            shieldMessage(if (ok) null else app.getString(R.string.shield_bad_domain))
+            refreshShield()
+        }
+    }
+
+    fun clearList(name: String) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { BlocklistFiles.clear(app, name) }
+            refreshShield()
+        }
+    }
+
+    /** Downloads a list only from an https address the user typed. */
+    fun importBlocklist(urlText: String) {
+        if (_state.value.shield.importing) return
+        _state.update { it.copy(shield = it.shield.copy(importing = true, message = null)) }
+        viewModelScope.launch {
+            val (domains, error) = withContext(Dispatchers.IO) { download(urlText.trim()) }
+            if (domains != null && domains.isNotEmpty()) {
+                withContext(Dispatchers.IO) { BlocklistFiles.writeImported(app, domains) }
+                shieldMessage(app.getString(R.string.shield_import_ok, domains.size))
+            } else {
+                shieldMessage(app.getString(R.string.shield_import_failed, error ?: "empty list"))
+            }
+            _state.update { it.copy(shield = it.shield.copy(importing = false)) }
+            refreshShield()
+        }
+    }
+
+    private fun download(urlText: String): Pair<Set<String>?, String?> {
+        val url = try { URL(urlText) } catch (e: IOException) { return null to "invalid address" }
+        if (url.protocol != "https") return null to "only https addresses are accepted"
+        val conn = try { url.openConnection() as HttpURLConnection } catch (e: IOException) { return null to (e.message ?: "connection failed") }
+        return try {
+            conn.connectTimeout = 10_000
+            conn.readTimeout = 20_000
+            if (conn.responseCode !in 200..299) return null to "HTTP ${conn.responseCode}"
+            val out = ByteArrayOutputStream()
+            val buf = ByteArray(16 * 1024)
+            conn.inputStream.use { input ->
+                while (true) {
+                    val n = input.read(buf)
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                    if (out.size() > MAX_LIST_BYTES) return null to "list is larger than 8 MB"
+                }
+            }
+            BlocklistParser.parse(out.toString(Charsets.UTF_8.name()), 300_000) to null
+        } catch (e: IOException) {
+            null to (e.message ?: "download failed")
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    private companion object {
+        const val LOOPBACK = "127.0.0.1"
+        const val REVERT_SECONDS = 15
+        const val MAX_LIST_BYTES = 8 * 1024 * 1024
+        val SENSOR_OPS = listOf("CAMERA", "RECORD_AUDIO", "FINE_LOCATION")
+    }
 }

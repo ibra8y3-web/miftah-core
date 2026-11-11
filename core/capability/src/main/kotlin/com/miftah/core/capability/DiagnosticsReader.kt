@@ -43,6 +43,17 @@ class DiagnosticsReader(private val context: Context) {
         )
     }
 
+    /** True if the system itself reports a VPN network (independent confirmation that a VPN is up). */
+    @Suppress("DEPRECATION")
+    fun vpnActive(): Boolean? {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return null
+        return try {
+            cm.allNetworks.any { cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true }
+        } catch (e: SecurityException) {
+            null
+        }
+    }
+
     fun network(): NetworkSnapshot? = try {
         readNetwork()
     } catch (e: SecurityException) {

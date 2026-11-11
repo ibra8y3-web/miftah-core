@@ -10,3 +10,5 @@
 - Fix: duplicate BouncyCastle classes (use jdk15to18 1.81 like libadb).
 - Adaptive app icon (with themed monochrome layer), real launcher icons in the app list, bottom-navigation redesign (cards, status pills, animated transitions, brand light/dark theme, Arabic-safe typography).
 - Automatic pairing: mDNS finds the ports, code typed in-app or via notification reply, automatic connect; advanced manual ports kept as fallback.
+- Tools hub: Privacy doctor, Ad blocker & firewall (local VPN), Startup manager (per-receiver switches), Display tweaks (density with 15 s auto-revert, animation speed), plus last-sensor-use in app details.
+- Fixes: Home hero card now fills the width; recent operations show name, outcome and failure reason on separate lines; new core:net module with tests.

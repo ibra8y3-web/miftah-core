@@ -6,6 +6,8 @@ class Verifiers(
     private val userId: Int,
     /** Reads "granted"/"denied" from the platform (PackageManager) for grant/revoke verification. */
     private val permissionState: (suspend (String, String) -> String?)? = null,
+    /** Reads "enabled"/"disabled" for pkg + component class from the platform. */
+    private val componentState: (suspend (String, String) -> String?)? = null,
 ) {
     fun forCommand(cmd: ShellCommand): Verification? = when (cmd) {
         is ShellCommand.DisableUser -> Verifications.disabled(PackageStateProbe(transport, userId), cmd.pkg)
@@ -28,9 +30,37 @@ class Verifiers(
         is ShellCommand.RevokePermission -> permissionState?.let { ps ->
             Verification({ ps(cmd.pkg, cmd.permission) }) { _, after -> after == "denied" }
         }
+        is ShellCommand.DisableComponent -> if (previousState == "enabled") ShellCommand.EnableComponent(cmd.pkg, cmd.component, cmd.userId) else null
+        is ShellCommand.EnableComponent -> if (previousState == "disabled") ShellCommand.DisableComponent(cmd.pkg, cmd.component, cmd.userId) else null
+        is ShellCommand.WmDensity, is ShellCommand.WmDensityReset -> densityInverse(previousState)
+        is ShellCommand.SettingsPutGlobal -> when {
+            previousState == "default" -> ShellCommand.SettingsPutGlobal(cmd.key, "1.0")
+            previousState != null && previousState != ShellParsers.normalizeScale(cmd.value) && previousState.toDoubleOrNull() != null ->
+                runCatching { ShellCommand.SettingsPutGlobal(cmd.key, previousState) }.getOrNull()
+            else -> null
+        }
         is ShellCommand.AppOpsSet -> {
             val p = AppOpProbe(transport, userId)
             Verification({ p.read(cmd.pkg, cmd.op) }) { _, after -> after == cmd.mode }
+        }
+        is ShellCommand.DisableComponent -> componentState?.let { cs ->
+            Verification({ cs(cmd.pkg, cmd.component) }) { _, after -> after == "disabled" }
+        }
+        is ShellCommand.EnableComponent -> componentState?.let { cs ->
+            Verification({ cs(cmd.pkg, cmd.component) }) { _, after -> after == "enabled" }
+        }
+        is ShellCommand.WmDensity -> {
+            val p = DensityProbe(transport)
+            Verification({ p.read() }) { _, after -> after == "dpi:${cmd.dpi}" }
+        }
+        is ShellCommand.WmDensityReset -> {
+            val p = DensityProbe(transport)
+            Verification({ p.read() }) { _, after -> after == "default" }
+        }
+        is ShellCommand.SettingsPutGlobal -> {
+            val p = AnimScaleProbe(transport, cmd.key)
+            val want = ShellParsers.normalizeScale(cmd.value)
+            Verification({ p.read() }) { _, after -> after != null && after == want }
         }
         else -> null
     }
@@ -48,6 +78,13 @@ object Rollback {
         is ShellCommand.AppOpsSet ->
             if (previousState != null && previousState in Validators.APPOP_MODES && previousState != cmd.mode)
                 ShellCommand.AppOpsSet(cmd.pkg, cmd.op, previousState, cmd.userId) else null
+        else -> null
+    }
+
+    private fun densityInverse(previous: String?): ShellCommand? = when {
+        previous == "default" -> ShellCommand.WmDensityReset
+        previous != null && previous.startsWith("dpi:") ->
+            previous.removePrefix("dpi:").toIntOrNull()?.let { runCatching { ShellCommand.WmDensity(it) }.getOrNull() }
         else -> null
     }
 }

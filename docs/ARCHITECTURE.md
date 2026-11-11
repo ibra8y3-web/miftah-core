@@ -5,5 +5,6 @@ Modules (dependency direction: app -> core:* -> core:model):
 - core:execution (pure JVM): typed ShellCommand allow-list, ExecutionEngine (timeout/confirmation/verification), probes, Rollback, PlanRunner, TerminalRunner, parsers, redaction.
 - core:adb (Android): LibAdbTransport (only class touching libadb-android), KeyVault (Keystore-wrapped key), AdbDiscovery (mDNS via NsdManager).
 - core:audit (Android): SQLite operation log.
+- core:net (pure JVM): IPv4/UDP and DNS packet codec, Blocklist and list parser used by the local VPN.
 - app: Compose UI (theme, components, screens), MainViewModel, PairingCoordinator + PairingReceiver (notification reply), MiftahApplication (shared ADB session).
 UI reads only ViewModel state; the ADB session is shared process-wide so the notification reply and the UI see the same connection.

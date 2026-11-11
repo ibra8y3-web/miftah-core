@@ -33,3 +33,26 @@ class AppOpProbe(private val transport: AdbTransport, private val userId: Int) {
         return ShellParsers.parseAppOpMode(raw.stdout, op)
     }
 }
+
+class DensityProbe(private val transport: AdbTransport) {
+    /** "dpi:N" when overridden, "default" when not, null when unreadable. */
+    suspend fun read(): String? {
+        val raw = transport.tryExecute(ShellCommand.WmDensityQuery.render()) ?: return null
+        if (raw.exitCode != 0) return null
+        val info = ShellParsers.parseDensity(raw.stdout) ?: return null
+        return when {
+            info.override != null -> "dpi:${info.override}"
+            info.physical != null -> "default"
+            else -> null
+        }
+    }
+}
+
+class AnimScaleProbe(private val transport: AdbTransport, private val key: String) {
+    suspend fun read(): String? {
+        val raw = transport.tryExecute(ShellCommand.SettingsGetGlobal(key).render()) ?: return null
+        if (raw.exitCode != 0) return null
+        val out = raw.stdout.trim()
+        return if (out.isEmpty() || out == "null") "default" else ShellParsers.normalizeScale(out)
+    }
+}

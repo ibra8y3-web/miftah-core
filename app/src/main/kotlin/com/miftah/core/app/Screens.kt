@@ -38,6 +38,8 @@ class Actions(
     val share: (String, String) -> Unit,
     val openLocale: () -> Unit,
     val requestNotifications: () -> Unit,
+    val startVpn: (VpnConfig) -> Unit,
+    val stopVpn: () -> Unit,
 )
 
 private enum class Dest(val label: Int, val icon: Int) {
@@ -52,7 +54,7 @@ private enum class Dest(val label: Int, val icon: Int) {
 fun MiftahApp(vm: MainViewModel, actions: Actions) {
     val state by vm.state.collectAsStateWithLifecycle()
     var dest by rememberSaveable { mutableStateOf(Dest.HOME) }
-    var toolsTab by rememberSaveable { mutableIntStateOf(0) }
+    var tool by rememberSaveable { mutableStateOf<Tool?>(null) }
     var moreTab by rememberSaveable { mutableIntStateOf(0) }
     val dark = when (state.settings.theme) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
@@ -85,17 +87,7 @@ fun MiftahApp(vm: MainViewModel, actions: Actions) {
                         Dest.HOME -> Gated(state, vm::refresh) { Dashboard(state) { dest = Dest.ADB } }
                         Dest.APPS -> Gated(state, vm::refresh) { AppList(state, vm) }
                         Dest.ADB -> AdbScreen(state, vm, actions)
-                        Dest.TOOLS -> Tabbed(
-                            listOf(R.string.tab_plans, R.string.tab_terminal, R.string.tab_diag, R.string.tab_audit),
-                            toolsTab, { toolsTab = it },
-                        ) { i ->
-                            when (i) {
-                                0 -> PlansScreen(state, vm)
-                                1 -> TerminalScreen(state, vm)
-                                2 -> DiagnosticsScreen(state, vm, actions)
-                                else -> AuditScreen(state, vm, actions)
-                            }
-                        }
+                        Dest.TOOLS -> ToolsHost(state, vm, actions, tool) { tool = it }
                         Dest.MORE -> Tabbed(
                             listOf(R.string.tab_capabilities, R.string.tab_settings, R.string.tab_extensions),
                             moreTab, { moreTab = it },
@@ -150,7 +142,7 @@ private fun Dashboard(s: UiState, onOpenAdb: () -> Unit) {
             colors = CardDefaults.cardColors(containerColor = Color.Transparent),
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Box(Modifier.background(Brush.linearGradient(listOf(Color(0xFF6A3DF0), Color(0xFF24105F)))).padding(20.dp)) {
+            Box(Modifier.fillMaxWidth().background(Brush.linearGradient(listOf(Color(0xFF6A3DF0), Color(0xFF24105F)))).padding(20.dp)) {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         Icon(painterResource(R.drawable.ic_key), contentDescription = null, tint = Color.White, modifier = Modifier.size(44.dp))
@@ -192,9 +184,7 @@ private fun Dashboard(s: UiState, onOpenAdb: () -> Unit) {
             if (s.audit.entries.isEmpty()) {
                 Text(stringResource(R.string.no_ops))
             } else {
-                s.audit.entries.take(3).forEach { e ->
-                    Text("${e.result.name} • ${e.target} • ${stringResource(outcomeLabel(e.result.outcome))}", style = MaterialTheme.typography.bodySmall)
-                }
+                s.audit.entries.take(4).forEach { e -> OperationRow(e) }
             }
         }
     }
@@ -292,6 +282,15 @@ private fun AppRow(a: AppInfo, selected: Boolean, onClick: () -> Unit, onToggle:
 private fun Dialogs(s: UiState, vm: MainViewModel, actions: Actions) {
     if (s.busy) {
         AlertDialog(onDismissRequest = {}, confirmButton = {}, title = { Text(stringResource(R.string.working)) }, text = { CircularProgressIndicator() })
+    }
+    s.display.revertIn?.let { sec ->
+        AlertDialog(
+            onDismissRequest = {},
+            confirmButton = { TextButton(onClick = vm::keepDisplay) { Text(stringResource(R.string.display_keep)) } },
+            dismissButton = { TextButton(onClick = vm::revertDisplayNow) { Text(stringResource(R.string.display_revert_now)) } },
+            title = { Text(stringResource(R.string.display_keep_title)) },
+            text = { Text(stringResource(R.string.display_keep_body, sec)) },
+        )
     }
     s.lastResult?.let { r ->
         AlertDialog(
