@@ -1,40 +1,14 @@
-name: Android build
-
-on:
-  push:
-    branches: [main]
-  pull_request:
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
+name: build
+on: [push, workflow_dispatch]
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: gradle
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: 'platform-tools'
+        with: { distribution: temurin, java-version: 17 }
       - uses: gradle/actions/setup-gradle@v4
-      - name: Install Android SDK platform
-        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
-      - name: Verify Gradle configuration
-        run: ./gradlew projects
-      - name: Run JVM unit tests
-        run: ./gradlew :core:model:test :core:execution:test :core:net:test
-      - name: Build debug APK
-        run: ./gradlew :app:assembleDebug
-      - name: Upload debug APK
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: miftah-core-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+        with: { gradle-version: "8.9" }
+      - run: gradle testDebugUnitTest :core:model:test :core:execution:test :core:net:test assembleDebug lint --stacktrace
+      - uses: actions/upload-artifact@v4
+        with: { name: miftah-debug-apk, path: app/build/outputs/apk/debug/*.apk }

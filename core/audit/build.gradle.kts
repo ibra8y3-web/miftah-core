@@ -1,4 +1,7 @@
-plugins { id("com.android.library"); id("org.jetbrains.kotlin.android") }
+plugins {
+    id("com.android.library")
+    id("org.jetbrains.kotlin.android")
+}
 android {
     namespace = "com.miftah.core.audit"
     compileSdk = 35
@@ -8,5 +11,5 @@ android {
 }
 dependencies {
     api(project(":core:model"))
-    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
 }

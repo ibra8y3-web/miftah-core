@@ -69,7 +69,11 @@ fun MiftahApp(vm: MainViewModel, actions: Actions) {
                     Dest.entries.forEach { d ->
                         NavigationBarItem(
                             selected = dest == d,
-                            onClick = { dest = d },
+                            onClick = {
+                                // Always reopen the Tools catalog when returning to its tab.
+                                if (d != Dest.TOOLS) tool = null
+                                dest = d
+                            },
                             icon = { Icon(painterResource(d.icon), contentDescription = null) },
                             label = { Text(stringResource(d.label), maxLines = 1) },
                         )
