@@ -30,15 +30,6 @@ class Verifiers(
         is ShellCommand.RevokePermission -> permissionState?.let { ps ->
             Verification({ ps(cmd.pkg, cmd.permission) }) { _, after -> after == "denied" }
         }
-        is ShellCommand.DisableComponent -> if (previousState == "enabled") ShellCommand.EnableComponent(cmd.pkg, cmd.component, cmd.userId) else null
-        is ShellCommand.EnableComponent -> if (previousState == "disabled") ShellCommand.DisableComponent(cmd.pkg, cmd.component, cmd.userId) else null
-        is ShellCommand.WmDensity, is ShellCommand.WmDensityReset -> densityInverse(previousState)
-        is ShellCommand.SettingsPutGlobal -> when {
-            previousState == "default" -> ShellCommand.SettingsPutGlobal(cmd.key, "1.0")
-            previousState != null && previousState != ShellParsers.normalizeScale(cmd.value) && previousState.toDoubleOrNull() != null ->
-                runCatching { ShellCommand.SettingsPutGlobal(cmd.key, previousState) }.getOrNull()
-            else -> null
-        }
         is ShellCommand.AppOpsSet -> {
             val p = AppOpProbe(transport, userId)
             Verification({ p.read(cmd.pkg, cmd.op) }) { _, after -> after == cmd.mode }
@@ -78,6 +69,15 @@ object Rollback {
         is ShellCommand.AppOpsSet ->
             if (previousState != null && previousState in Validators.APPOP_MODES && previousState != cmd.mode)
                 ShellCommand.AppOpsSet(cmd.pkg, cmd.op, previousState, cmd.userId) else null
+        is ShellCommand.DisableComponent -> if (previousState == "enabled") ShellCommand.EnableComponent(cmd.pkg, cmd.component, cmd.userId) else null
+        is ShellCommand.EnableComponent -> if (previousState == "disabled") ShellCommand.DisableComponent(cmd.pkg, cmd.component, cmd.userId) else null
+        is ShellCommand.WmDensity, is ShellCommand.WmDensityReset -> densityInverse(previousState)
+        is ShellCommand.SettingsPutGlobal -> when {
+            previousState == "default" -> ShellCommand.SettingsPutGlobal(cmd.key, "1.0")
+            previousState != null && previousState != ShellParsers.normalizeScale(cmd.value) && previousState.toDoubleOrNull() != null ->
+                runCatching { ShellCommand.SettingsPutGlobal(cmd.key, previousState) }.getOrNull()
+            else -> null
+        }
         else -> null
     }
 
