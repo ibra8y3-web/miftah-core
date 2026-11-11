@@ -11,7 +11,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,11 +46,14 @@ private fun loadIcon(context: Context, pkg: String): ImageBitmap? = try {
 @Composable
 internal fun AppIcon(pkg: String, label: String, size: Dp = 44.dp, modifier: Modifier = Modifier) {
     val context = LocalContext.current
-    val bitmap by produceState<ImageBitmap?>(initialValue = IconCache.get(pkg), pkg) {
-        value = IconCache.get(pkg) ?: try {
-            withContext(Dispatchers.IO) { loadIcon(context, pkg)?.also { IconCache.put(pkg, it) } }
-        } catch (e: CancellationException) {
-            throw e
+    var bitmap by remember(pkg) { mutableStateOf(IconCache.get(pkg)) }
+    LaunchedEffect(pkg) {
+        if (bitmap == null) {
+            try {
+                bitmap = withContext(Dispatchers.IO) { loadIcon(context, pkg)?.also { IconCache.put(pkg, it) } }
+            } catch (e: CancellationException) {
+                throw e
+            }
         }
     }
     val bmp = bitmap
