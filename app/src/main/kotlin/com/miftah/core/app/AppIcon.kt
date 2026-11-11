@@ -44,12 +44,10 @@ private fun loadIcon(context: Context, pkg: String): ImageBitmap? = try {
 internal fun AppIcon(pkg: String, label: String, size: Dp = 44.dp, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val bitmap by produceState<ImageBitmap?>(initialValue = IconCache.get(pkg), pkg) {
-        if (value == null) {
-            try {
-                value = withContext(Dispatchers.IO) { loadIcon(context, pkg)?.also { IconCache.put(pkg, it) } }
-            } catch (e: CancellationException) {
-                throw e
-            }
+        value = IconCache.get(pkg) ?: try {
+            withContext(Dispatchers.IO) { loadIcon(context, pkg)?.also { IconCache.put(pkg, it) } }
+        } catch (e: CancellationException) {
+            throw e
         }
     }
     val bmp = bitmap
